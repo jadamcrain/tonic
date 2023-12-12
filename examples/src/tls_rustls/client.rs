@@ -5,6 +5,7 @@ pub mod pb {
     tonic::include_proto!("/grpc.examples.unaryecho");
 }
 
+use tower::ServiceBuilder;
 use pb::{echo_client::EchoClient, EchoRequest};
 
 
@@ -13,7 +14,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let stream = tokio::net::TcpStream::connect("[::1]:50051").await?;
 
-    let (sender, conn) = hyper::client::conn::handshake(stream).await?;
+    let (svc, conn) = hyper::client::conn::Builder::new()
+        .http2_only(true)
+        .handshake(stream)
+        .await?;
 
     tokio::spawn(async {
         if let Err(err) = conn.await {
@@ -22,11 +26,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
 
-    // I've tried instantiating with both the raw sender and the buffered service below
-    // let sender = tower::buffer::Buffer::new(sender, 64);
+    // If you need clone, you can buffer the service behind an mpsc
+    // let svc = ServiceBuilder::new().buffer(256).service(svc);
 
 
-    let mut client = EchoClient::new(sender);
+    let mut client = EchoClient::new(svc);
 
     let request = tonic::Request::new(EchoRequest {
         message: "hello".into(),
